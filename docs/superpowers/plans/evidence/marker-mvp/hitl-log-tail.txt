@@ -1,0 +1,3 @@
+{"timestamp": "2026-05-29T15:23:46.026567+00:00", "event": "label_decision", "decision": {"block_id": "teil-1", "action": "accept", "source": "human", "final_labels": ["topic_daily_life"], "regenerate_count": 0}}
+{"timestamp": "2026-05-29T16:26:07.467003+00:00", "event": "label_decision", "decision": {"block_id": "teil-1", "action": "accept", "source": "human", "final_labels": ["topic_daily_life"], "regenerate_count": 0}}
+{"timestamp": "2026-05-29T17:07:39.913653+00:00", "event": "label_decision", "decision": {"block_id": "action1_block_creation", "action": "accept", "source": "human", "final_labels": ["topic_daily_life"], "regenerate_count": 0}}

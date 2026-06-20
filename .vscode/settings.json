@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^powershell -ExecutionPolicy Bypass -File \\.\\\\Requirement\\\\merge_audio_with_markers\\.ps1 -OutputFile \"Outputs\\\\Merge\\\\Lektion-7\\.mp3\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

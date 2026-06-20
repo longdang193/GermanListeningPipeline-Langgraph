@@ -1,0 +1,87 @@
+
+============================================================
+  Listening_2 Validation � Listening-generated.md
+  Blocks found: 23
+============================================================
+
+  B1-3-2.1 Block Structure: FAIL FAIL
+    WARN  Expected 5 Teil 1 headings (Aufgabe 41-45), found 0
+    WARN  Expected 5 Teil 3 headings (Aufgabe 56-60), found 0
+    WARN  Expected at least 1 Teil 2 Q&A heading (## Teil 2 � Q&A NN)
+    WARN  Block count mismatch: found 23 blocks, expected 0 based on headings (5+N+5)
+
+  B1-3-2.2 Field Completeness: PASS PASS
+
+  B1-3-2.3 HTML Format: PASS PASS
+
+  B1-3-2.4 Content Minimums: PASS PASS
+
+  B1-3-2.5 Timestamp Validation: PASS PASS
+
+  B1-3-2.6 Translation Consistency: FAIL FAIL
+    WARN  Block 1, pair 3: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 1, pair 9: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 1, pair 10: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 1, pair 21: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 2, pair 4: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 2, pair 14: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 4, pair 1: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 6, pair 2: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 6, pair 4: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 7, pair 4: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 7, pair 12: DE has number-like tokens ['drei', 'neun'] but EN has none
+    WARN  Block 7, pair 15: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 8, pair 1: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 8, pair 7: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 8, pair 14: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 8, pair 18: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 9, pair 1: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 9, pair 2: DE has number-like tokens ['zweihundertf�nfzig'] but EN has none
+    WARN  Block 9, pair 3: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 9, pair 5: DE has number-like tokens ['zweihundertf�nfzig'] but EN has none
+    WARN  Block 9, pair 12: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 9, pair 13: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 9, pair 14: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 10, pair 1: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 10, pair 6: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 10, pair 11: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 10, pair 15: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 10, pair 20: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 11, pair 1: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 11, pair 2: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 11, pair 3: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 11, pair 10: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 11, pair 12: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 11, pair 15: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 12, pair 1: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 12, pair 1: DE has number-like tokens ['dreihundert', 'f�nfhundert'] but EN has none
+    WARN  Block 12, pair 2: DE has number-like tokens ['f�nfhundert'] but EN has none
+    WARN  Block 12, pair 4: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 13, pair 7: DE has number-like tokens ['f�nfhundert'] but EN has none
+    WARN  Block 16, pair 16: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 16, pair 17: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 17, pair 7: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 17, pair 8: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 18, pair 11: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 18, pair 12: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 18, pair 13: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 19, pair 1: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 19, pair 3: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 20, pair 5: DE has number-like tokens ['f�nfhundert'] but EN has none
+    WARN  Block 20, pair 7: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 20, pair 11: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 22, pair 3: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 22, pair 4: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 22, pair 9: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 22, pair 11: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 22, pair 12: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 22, pair 14: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 22, pair 19: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 23, pair 4: DE has number-like tokens ['dreihundert'] but EN has none
+    WARN  Block 23, pair 5: punctuation mismatch (DE ends with '?', EN ends with '.')
+    WARN  Block 23, pair 9: punctuation mismatch (DE ends with '?', EN ends with '.')
+
+============================================================
+  ERROR SOME CHECKS FAILED - review errors above
+============================================================
+

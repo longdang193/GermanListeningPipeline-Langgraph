@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "name": "wave1_fixture_manifest",
+    "description": "Deterministic fixtures for parser and latest-audio selection tests"
+  },
+  "classic_expected": {
+    "teil1_headings": 5,
+    "teil3_headings": 5,
+    "teil2_min": 1
+  },
+  "marker_expected": {
+    "max_block_seconds": 60,
+    "heading_pattern": "Teil X or Teil X.Y"
+  },
+  "audio_selection": {
+    "folder": "audio_mtime",
+    "expected_latest": "sample_new.mp3"
+  }
+}

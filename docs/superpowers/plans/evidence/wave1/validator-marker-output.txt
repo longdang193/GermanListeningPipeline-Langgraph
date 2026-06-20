@@ -1,0 +1,28 @@
+
+============================================================
+  Marker-Based Listening_2 Validation � Listening-generated.md
+  Blocks found: 23
+============================================================
+
+  B1-4-2.1 Block Structure: PASS
+
+  B1-4-2.2 Field Completeness: PASS
+
+  B1-4-2.3 HTML Format: PASS
+
+  B1-4-2.4 Content Minimums: PASS
+
+  B1-4-2.5 Timestamp Validation: PASS
+
+  B1-4-2.6 Translation Consistency: PASS
+
+  B1-4-2.7 Marker Exclusion: PASS
+
+  B1-4-2.8 Instruction Exclusion: PASS
+
+  B1-4-2.9 Block Duration: PASS
+
+============================================================
+  ALL CHECKS PASSED
+============================================================
+

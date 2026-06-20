@@ -1,0 +1,7 @@
+[glossary]
+max_gloss_words = 5
+forbidden_punctuation = ["/", "(", ")", "[", "]", ";", ":", ","]
+forbidden_prefixes = ["blood", "damn", "freak", "frig"]
+
+[translation]
+neutralize_short_fragments_max_source_words = 2

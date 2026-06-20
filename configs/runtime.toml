@@ -1,0 +1,16 @@
+[paths]
+repo_root = "C:/Users/HOANG PHI LONG DANG/repos/German_Listening"
+transcripts_dir = "Transcripts"
+audios_dir = "Audios"
+outputs_dir = "Outputs"
+labels_file = "configs/labels.toml"
+review_logs_dir = "Outputs/review_logs"
+
+[thresholds]
+high_confidence = 0.8
+max_regenerate_attempts = 2
+max_block_seconds = 60
+
+[modes]
+default = "marker"
+allowed = ["classic", "marker"]

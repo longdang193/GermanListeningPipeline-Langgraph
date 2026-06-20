@@ -1,0 +1,19 @@
+[[labels]]
+id = "topic_daily_life"
+name = "Daily Life"
+
+[[labels]]
+id = "topic_work"
+name = "Work"
+
+[[labels]]
+id = "topic_health"
+name = "Health"
+
+[[labels]]
+id = "grammar_subordinate_clause"
+name = "Subordinate Clause"
+
+[[labels]]
+id = "exam_strategy"
+name = "Exam Strategy"

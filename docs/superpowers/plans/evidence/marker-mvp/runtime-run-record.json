@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-05-29T19:45:00+00:00",
+  "action": "CREATE LISTENING BLOCKS for ANKI",
+  "mode": "marker-based",
+  "transcript_path": "C:/Users/HOANG PHI LONG DANG/repos/German_Listening/Transcripts/marker-2026-05-13-16-19-07-transcript.json",
+  "audio_path": "C:/Users/HOANG PHI LONG DANG/repos/German_Listening/Audios/L8-merged.mp3",
+  "output_markdown": "C:/Users/HOANG PHI LONG DANG/repos/German_Listening/Outputs/Listening-generated.md",
+  "followup_action": "CREATE AUDIOS and TRANSCRIPTS from CREATED LISTENING BLOCKS",
+  "counts": {
+    "blocks": 23,
+    "mp3": 23,
+    "srt": 23
+  }
+}

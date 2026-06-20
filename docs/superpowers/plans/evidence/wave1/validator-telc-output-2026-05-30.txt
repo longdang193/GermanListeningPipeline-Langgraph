@@ -1,0 +1,22 @@
+
+============================================================
+  Listening_2 Validation � Listening-generated.md
+  Blocks found: 19
+============================================================
+
+  B1-3-2.1 Block Structure: PASS PASS
+
+  B1-3-2.2 Field Completeness: PASS PASS
+
+  B1-3-2.3 HTML Format: PASS PASS
+
+  B1-3-2.4 Content Minimums: PASS PASS
+
+  B1-3-2.5 Timestamp Validation: PASS PASS
+
+  B1-3-2.6 Translation Consistency: PASS PASS
+
+============================================================
+  OK ALL CHECKS PASSED
+============================================================
+

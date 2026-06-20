@@ -1,0 +1,8 @@
+German_Listening MVP
+1) CREATE LISTENING BLOCKS for ANKI
+2) CREATE AUDIOS and TRANSCRIPTS from CREATED LISTENING BLOCKS
+3) EXIT
+Select [1/2/3]: Listening blocks path [C:\Users\HOANG PHI LONG DANG\repos\German_Listening\Outputs\Listening-generated.md]: Listening blocks file not found.
+1) create new listening blocks now
+2) exit
+Choose [1/2]: 
