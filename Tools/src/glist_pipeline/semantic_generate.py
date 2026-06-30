@@ -125,9 +125,14 @@ def placeholder_note() -> str:
     )
 
 
-def generate_semantic() -> int:
-    tp = latest_transcript()
-    audio = latest_audio_name()
+def generate_semantic(
+    transcript_path: Path | None = None,
+    audio_name: str | None = None,
+) -> int:
+    tp = transcript_path or latest_transcript()
+    audio = audio_name or latest_audio_name()
+    print(f"Semantic source transcript: {tp}")
+    print(f"Semantic source audio: {audio}")
     data = json.loads(tp.read_text(encoding="utf-8"))
     words = flatten_words(data.get("segments", []))
     if not words:

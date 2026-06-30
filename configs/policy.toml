@@ -2,6 +2,16 @@
 max_gloss_words = 5
 forbidden_punctuation = ["/", "(", ")", "[", "]", ";", ":", ","]
 forbidden_prefixes = ["blood", "damn", "freak", "frig"]
+banned_exact_glosses = [
+  "context term",
+  "context term used in the dialogue",
+  "verb form in context",
+  "adjective form",
+  "abstract noun",
+  "noun",
+  "noun often an action process",
+  "noun often an action/process",
+]
 
 [translation]
 neutralize_short_fragments_max_source_words = 2

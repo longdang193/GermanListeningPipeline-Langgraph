@@ -14,9 +14,9 @@ The app supports 3 generation modes during Action 1:
 
 - `DAF B1`
 - `TELC B1`
-- `agent suggestions`
+- `Guided review`
 
-`agent suggestions` is HITL lane. It lets pipeline generate suggestions and then route human review/acceptance in app flow.
+`Guided review` is HITL lane. It chooses best available generator route, then asks user to review result.
 
 ## Current MVP Flow
 

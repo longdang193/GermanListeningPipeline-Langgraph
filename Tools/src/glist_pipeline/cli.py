@@ -26,6 +26,27 @@ OUTPUT_MD = REPO_ROOT / "Outputs" / "Listening-generated.md"
 
 Mode = Literal["marker", "classic", "hitl"]
 
+MODE_ALIASES: dict[str, Mode] = {
+    "1": "marker",
+    "daf": "marker",
+    "daf b1": "marker",
+    "marker-based": "marker",
+    "marker": "marker",
+    "2": "classic",
+    "telc": "classic",
+    "telc b1": "classic",
+    "classic-based": "classic",
+    "classic": "classic",
+    "3": "hitl",
+    "agent": "hitl",
+    "agent suggestion": "hitl",
+    "agent suggestions": "hitl",
+    "guided review": "hitl",
+    "guided": "hitl",
+    "suggestions": "hitl",
+    "hitl": "hitl",
+}
+
 
 def _load_env_file_if_present(path: Path) -> None:
     if not path.exists():
@@ -45,6 +66,33 @@ def _load_env_file_if_present(path: Path) -> None:
 
 def _mode_impl(mode: str):
     return classic if mode == "classic" else marker
+
+
+def _display_mode_name(mode: Mode) -> str:
+    if mode == "marker":
+        return "DAF B1"
+    if mode == "classic":
+        return "TELC B1"
+    return "Guided review"
+
+
+def _route_label(routed: str) -> str:
+    labels = {
+        "marker": "marker-based",
+        "classic": "classic-based",
+        "semantic": "semantic fallback",
+    }
+    return labels.get(routed, routed)
+
+
+def _route_reason(selected_mode: Mode, routed: str, profile_reason: str) -> str:
+    if routed == "marker":
+        return "transcript contains marker anchors."
+    if routed == "classic":
+        return "classic mode chosen."
+    if routed == "semantic":
+        return "transcript has no marker anchors, so app uses timing/sentence-based splitting."
+    return profile_reason
 
 
 def _set_latest(path: Path) -> None:
@@ -146,12 +194,21 @@ def _detect_blocks_mode(md_path: Path) -> str:
     text = md_path.read_text(encoding="utf-8")
     if "Teil 2 — Q&A" in text or "Aufgabe 41" in text or "Aufgabe 56" in text:
         return "classic"
+    if re.search(r"^## Abschnitt \d+\s+—\s+", text, flags=re.MULTILINE):
+        return "semantic"
     return "marker"
 
 
+def _split_mode_for_blocks_mode(mode: str) -> str:
+    return "classic" if mode == "classic" else "marker"
 
 def _run_shared_postprocess(md_path: Path) -> int:
+    print("Enrichment started...")
+    print("LLM translations and notes may take a while.")
+    print(f"Postprocess: enriching {md_path.name}...")
     enrich_file_in_place(md_path)
+    print("Enrichment complete. Running placeholder check...")
+    print("Postprocess: enrichment complete. Running placeholder check...")
     text = md_path.read_text(encoding="utf-8")
     hits = [pat for pat in BANNED if re.search(pat, text)]
     if hits:
@@ -210,11 +267,15 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
         print(f"Audio not found: {audio_path}")
         return 1
 
+    print(f"Transcript file: {transcript_path}")
+    print(f"Audio file: {audio_path}")
+
     _set_latest(transcript_path)
     _set_latest(audio_path)
 
+    print("Checking transcript profile...")
     profile = detect_transcript_profile(transcript_path)
-    requested_mode = "agent_suggestions" if mode == "hitl" else mode
+    requested_mode = "guided_review" if mode == "hitl" else mode
 
     try:
         routed = route_mode(mode, profile)
@@ -222,7 +283,7 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
         msg = str(exc)
         if msg == "marker_mode_unavailable_for_transcript":
             print("Mode router: DAF B1 mode unavailable for this transcript (no marker anchors).")
-            print("Use TELC B1 or agent suggestions mode.")
+            print("Use TELC B1 or Guided review mode.")
         else:
             print(f"Mode router failed: {msg}")
         append_router_run_record(
@@ -238,12 +299,16 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
         )
         return 1
 
+    print(f"Route selected: {_route_label(routed)}")
+    print(f"Reason: {_route_reason(mode, routed, profile.reason)}")
+    print("Generating listening blocks...")
+
     if routed == "marker":
         rc = marker.generate()
     elif routed == "classic":
         rc = classic.generate()
     else:
-        rc = generate_semantic()
+        rc = generate_semantic(transcript_path=transcript_path, audio_name=audio_path.name)
 
     append_router_run_record(
         REPO_ROOT / "Outputs" / "review_logs" / "mode_router_runs.jsonl",
@@ -294,6 +359,7 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
                 "quality_gate_pass": True,
             },
         )
+        print("Postprocess complete.")
         return 0
 
     allowed = load_taxonomy(REPO_ROOT / "configs" / "labels.toml")
@@ -306,7 +372,7 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
         )
     ]
 
-    print("Agent suggestion for block creation review:")
+    print("Review generated block plan:")
     print("1) accept  2) regenerate  3) discard  4) manual_select")
     choice = input("Choose [1/2/3/4]: ").strip()
     mapping = {
@@ -335,14 +401,16 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
     append_review_log(REPO_ROOT / "Outputs" / "review_logs" / "labels.jsonl", decision)
 
     if action is DecisionAction.REGENERATE:
-        print("Regenerate selected. Re-running selected route once.")
+        print("Regenerating once with same route...")
+        print(f"Route remains: {_route_label(routed)}")
+        print("If transcript and timing are unchanged, block count may stay same.")
         if routed == "marker":
             rc = marker.generate()
         elif routed == "classic":
             rc = classic.generate()
             _normalize_telc_blocks_from_de_ssot(OUTPUT_MD)
         else:
-            rc = generate_semantic()
+            rc = generate_semantic(transcript_path=transcript_path, audio_name=audio_path.name)
         if rc != 0:
             return rc
 
@@ -384,6 +452,7 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
         },
     )
 
+    print("Postprocess complete.")
     print(f"HITL decision recorded: {decision.action}")
     return 0
 
@@ -399,11 +468,11 @@ def _run_action_create_audios_from_blocks(blocks_path: Path) -> int:
         return 0
 
     mode = _detect_blocks_mode(blocks_path)
+    split_mode = _split_mode_for_blocks_mode(mode)
     print(f"Detected blocks mode: {mode}")
-    return _mode_impl(mode).split()
-
-
-
+    if split_mode != mode:
+        print(f"Using deterministic splitter: {split_mode}")
+    return _mode_impl(split_mode).split()
 
 def _repair_console_path(raw: str) -> Path:
     value = raw.strip().strip('"')
@@ -441,25 +510,26 @@ def _prompt_path(prompt: str, default: Path | None = None) -> Path:
         return default
     return _repair_console_path(raw)
 
+def _prompt_mode() -> Mode | None:
+    print("Choose block generation mode:")
+    print("1) DAF B1")
+    print("2) TELC B1")
+    print("3) Guided review")
+    raw_mode = input("Mode [1/2/3 or name]: ").strip().lower()
+    return MODE_ALIASES.get(raw_mode)
+
+
 def run_menu_action_1() -> int:
     transcript = _prompt_path("Input transcript path: ")
     audio = _prompt_path("Input audio path: ")
-    print("Mode options: DAF B1 / TELC B1 / agent suggestions")
-    raw_mode = input("Mode: ").strip().lower()
-    mapping: dict[str, Mode] = {
-        "daf b1": "marker",
-        "marker-based": "marker",
-        "marker": "marker",
-        "telc b1": "classic",
-        "classic-based": "classic",
-        "classic": "classic",
-        "agent suggestions": "hitl",
-        "hitl": "hitl",
-    }
-    mode = mapping.get(raw_mode)
+    mode = _prompt_mode()
     if mode is None:
         print("Invalid mode.")
         return 1
+    print(f"Selected mode: {_display_mode_name(mode)}")
+    if mode == "hitl":
+        print("Guided review chooses best available generator, then asks you to review result.")
+        print("Block count is generator-based, not LLM-decided in this mode.")
     return _run_action_create_blocks(transcript, audio, mode)
 
 
@@ -470,19 +540,29 @@ def run_menu_action_2() -> int:
 
 
 def run_menu() -> int:
-    print("German_Listening MVP")
-    print("1) CREATE LISTENING BLOCKS for ANKI")
-    print("2) CREATE AUDIOS and TRANSCRIPTS from CREATED LISTENING BLOCKS")
-    print("3) EXIT")
-    choice = input("Select [1/2/3]: ").strip()
-    if choice == "1":
-        return run_menu_action_1()
-    if choice == "2":
-        return run_menu_action_2()
-    if choice == "3":
-        return 0
-    print("Invalid selection")
-    return 1
+    while True:
+        print("German_Listening MVP")
+        print("1) CREATE LISTENING BLOCKS for ANKI")
+        print("2) CREATE AUDIOS and TRANSCRIPTS from CREATED LISTENING BLOCKS")
+        print("3) EXIT")
+        choice = input("Select [1/2/3]: ").strip()
+        if choice == "1":
+            rc = run_menu_action_1()
+            if rc == 0:
+                print("Action complete. Choose next action or exit.")
+            else:
+                print(f"Action ended with code {rc}. Choose next action or exit.")
+            continue
+        if choice == "2":
+            rc = run_menu_action_2()
+            if rc == 0:
+                print("Action complete. Choose next action or exit.")
+            else:
+                print(f"Action ended with code {rc}. Choose next action or exit.")
+            continue
+        if choice == "3":
+            return 0
+        print("Invalid selection")
 
 
 def cmd_generate(args: argparse.Namespace) -> int:

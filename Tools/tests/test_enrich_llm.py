@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import glist_pipeline.enrich_llm as enrich_llm
 from glist_pipeline.enrich_llm import _fetch_valid_payload, _keywords_match_source
 from glist_pipeline.glossary_policy import (
@@ -123,7 +125,7 @@ def test_fetch_valid_payload_retries_after_parse_failure(monkeypatch) -> None:
     assert calls["count"] == 2
 
 
-def test_fetch_valid_payload_repairs_keyword_drift_with_source_fallback(monkeypatch) -> None:
+def test_fetch_valid_payload_repairs_keyword_drift_with_source_repair_lane(monkeypatch) -> None:
     def fake_call(_german_sentences: list[str], _glossary_policy: object) -> dict:
         return {
             "translations": ["We were in good spirits."],
@@ -142,13 +144,40 @@ def test_fetch_valid_payload_repairs_keyword_drift_with_source_fallback(monkeypa
         }
 
     monkeypatch.setattr(enrich_llm, "_call_openai", fake_call)
+    monkeypatch.setattr(
+        enrich_llm,
+        "_call_keyword_repair_openai",
+        lambda german_sentences, candidate_terms, glossary_policy: [
+            {"term": "Grundschule", "gloss": "primary school"},
+            {"term": "Maltesisch", "gloss": "Maltese"},
+            {"term": "Stufe", "gloss": "level"},
+            {"term": "Dinge", "gloss": "spirits"},
+            {"term": "höchster", "gloss": "highest"},
+        ],
+    )
     payload = _fetch_valid_payload(
         ["Ich war ganz guter Dinge und die Grundschule hatte Maltesisch auf höchster Stufe."],
         CONTENT_POLICY,
     )
     assert len(payload["keywords"]) == 5
-    assert payload["keywords"][0]["term"]
     assert _keywords_match_source(
         payload["keywords"],
         ["Ich war ganz guter Dinge und die Grundschule hatte Maltesisch auf höchster Stufe."],
     ) is True
+    assert keywords_have_conservative_glosses(payload["keywords"], GLOSSARY_POLICY) is True
+
+
+def test_run_shared_postprocess_prints_progress(monkeypatch, tmp_path, capsys) -> None:
+    from glist_pipeline import cli
+
+    md_path = tmp_path / "Listening-generated.md"
+    md_path.write_text("ok", encoding="utf-8")
+    monkeypatch.setattr(cli, "enrich_file_in_place", lambda _path: 0)
+    monkeypatch.setattr(cli, "BANNED", [])
+
+    assert cli._run_shared_postprocess(md_path) == 0
+    out = capsys.readouterr().out
+    assert "Enrichment started..." in out
+    assert "LLM translations and notes may take a while." in out
+    assert "Postprocess: enriching Listening-generated.md..." in out
+    assert "Enrichment complete. Running placeholder check..." in out

@@ -3,17 +3,19 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+
 from .blocks import Block
 from .glossary_policy import (
     ContentPolicy,
-    extract_note_keywords,
     GlossaryPolicy,
+    extract_note_keywords,
     keywords_have_conservative_glosses,
     load_content_policy,
     sanitize_keywords,
     sanitize_short_fragment_translation,
     translation_is_conservative,
 )
+from .llm_provider import get_openai_model_name, supports_responses_api
 from .markdown import parse_markdown, render_document
 
 TODO_PATTERNS = (
@@ -22,6 +24,7 @@ TODO_PATTERNS = (
     "TODO_GRAMMAR_",
 )
 MAX_ENRICH_ATTEMPTS = 3
+KEYWORD_REPAIR_CANDIDATE_LIMIT = 12
 CONTENT_POLICY = load_content_policy()
 
 SYSTEM_PROMPT = (
@@ -33,40 +36,61 @@ SYSTEM_PROMPT = (
     "Return only valid JSON."
 )
 
+KEYWORD_REPAIR_SYSTEM_PROMPT = (
+    "You repair keyword glosses for German listening-study material. "
+    "Stay fully source-grounded. Use only candidate terms provided by user. "
+    "Write short neutral glossary meanings in plain English. "
+    "Return only valid JSON."
+)
+
 
 def _extract_german_sentences_from_en1(en_1: str) -> list[str]:
-    parts = [p.strip() for p in re.split(r"\s*<br>\s*", en_1.strip()) if p.strip()]
+    parts = [part.strip() for part in re.split(r"\s*<br>\s*", en_1.strip()) if part.strip()]
     out: list[str] = []
-    for p in parts:
-        m = re.match(r"^<b>(.*?)</b>\s*—\s*", p)
-        if m:
-            out.append(m.group(1).strip())
+    for part in parts:
+        match = re.match(r"^<b>(.*?)</b>\s*—\s*", part)
+        if match:
+            out.append(match.group(1).strip())
     return out
 
 
 def _needs_enrichment(block: Block) -> bool:
-    e = block.fields.get("en_1", "")
-    n = block.fields.get("note_1", "")
-    return any(tok in e for tok in TODO_PATTERNS) or any(tok in n for tok in TODO_PATTERNS)
+    en_1 = block.fields.get("en_1", "")
+    note_1 = block.fields.get("note_1", "")
+    if any(token in en_1 for token in TODO_PATTERNS) or any(token in note_1 for token in TODO_PATTERNS):
+        return True
+
+    translation_pairs = _extract_translation_pairs(en_1)
+    if any(
+        not translation_is_conservative(german_sentence, english_sentence, CONTENT_POLICY.translation)
+        for german_sentence, english_sentence in translation_pairs
+    ):
+        return True
+
+    keywords = extract_note_keywords(note_1)
+    if keywords and not keywords_have_conservative_glosses(keywords, CONTENT_POLICY.glossary):
+        return True
+
+    return False
 
 
 def _render_en1(german_sentences: list[str], english_sentences: list[str]) -> str:
     lines: list[str] = []
-    for de, en in zip(german_sentences, english_sentences):
-        lines.append(f"<b>{de}</b> — {en}")
+    for german_sentence, english_sentence in zip(german_sentences, english_sentences):
+        lines.append(f"<b>{german_sentence}</b> — {english_sentence}")
     return "<br>".join(lines)
 
 
 def _render_note(keywords: list[dict], grammar: list[dict]) -> str:
-    kw_lines = ["<b>Key Words and Phrases</b><br>"]
+    keyword_lines = ["<b>Key Words and Phrases</b><br>"]
     for item in keywords:
-        kw_lines.append(f"• <b>{item['term']}</b> — {item['gloss']}<br>")
+        keyword_lines.append(f"• <b>{item['term']}</b> — {item['gloss']}<br>")
 
-    gr_lines = ["<br><b>Grammar to Remember</b><br>"]
+    grammar_lines = ["<br><b>Grammar to Remember</b><br>"]
     for item in grammar:
-        gr_lines.append(f"• <b>{item['point']}</b> — {item['explanation']}<br>")
+        grammar_lines.append(f"• <b>{item['point']}</b> — {item['explanation']}<br>")
 
-    return "".join(kw_lines + gr_lines).rstrip("<br>")
+    return "".join(keyword_lines + grammar_lines).rstrip("<br>")
 
 
 def _extract_translation_pairs(en_1: str) -> list[tuple[str, str]]:
@@ -83,10 +107,10 @@ def _apply_content_policy_to_block(block: Block, content_policy: ContentPolicy) 
 
     translation_pairs = _extract_translation_pairs(block.fields.get("en_1", ""))
     if translation_pairs:
-        german_sentences = [de for de, _ in translation_pairs]
+        german_sentences = [german_sentence for german_sentence, _ in translation_pairs]
         sanitized_translations = [
-            sanitize_short_fragment_translation(de, en, content_policy.translation)
-            for de, en in translation_pairs
+            sanitize_short_fragment_translation(german_sentence, english_sentence, content_policy.translation)
+            for german_sentence, english_sentence in translation_pairs
         ]
         sanitized_en_1 = _render_en1(german_sentences, sanitized_translations)
         if sanitized_en_1 != block.fields.get("en_1", ""):
@@ -119,43 +143,46 @@ def _extract_grammar_items(grammar_html: str) -> list[dict[str, str]]:
 
 
 def _normalize_for_match(text: str) -> str:
-    text = text.casefold()
-    text = re.sub(r"[^\w\s]", " ", text, flags=re.UNICODE)
-    return " ".join(text.split())
+    normalized = text.casefold()
+    normalized = re.sub(r"[^\w\s]", " ", normalized, flags=re.UNICODE)
+    return " ".join(normalized.split())
 
 
-def _build_keyword_fallback(german_sentences: list[str]) -> list[dict[str, str]]:
-    from .legacy.generate_listening_4 import LOW_VALUE_TOKENS, STOPWORDS, keyword_gloss, normalize_token
+def _rank_keyword_candidates(german_sentences: list[str]) -> list[tuple[str, str]]:
+    from .legacy.generate_listening_4 import (
+        GLOSS_MAP,
+        LOW_VALUE_TOKENS,
+        STOPWORDS,
+        normalize_token,
+    )
 
     stats: dict[str, dict[str, int | str]] = {}
     ordered_norms: list[str] = []
     for sentence in german_sentences:
         tokens = re.findall(r"\b[\wÄÖÜäöüß'-]+\b", sentence, flags=re.UNICODE)
         for index, token in enumerate(tokens):
-            norm = normalize_token(token)
-            if not norm or norm.isdigit():
+            normalized = normalize_token(token)
+            if not normalized or normalized.isdigit() or len(normalized) < 4:
                 continue
-            if len(norm) < 4:
+            if normalized in STOPWORDS or normalized in LOW_VALUE_TOKENS:
                 continue
-            if norm in STOPWORDS or norm in LOW_VALUE_TOKENS:
-                continue
-            if norm not in stats:
-                stats[norm] = {
+            if normalized not in stats:
+                stats[normalized] = {
                     "display": token,
                     "count": 0,
                     "non_start": 0,
                     "capitalized": 0,
                 }
-                ordered_norms.append(norm)
-            stats[norm]["count"] += 1
+                ordered_norms.append(normalized)
+            stats[normalized]["count"] += 1
             if index > 0:
-                stats[norm]["non_start"] += 1
+                stats[normalized]["non_start"] += 1
             if token[:1].isupper():
-                stats[norm]["capitalized"] += 1
+                stats[normalized]["capitalized"] += 1
 
     ranked: list[tuple[int, int, str, str]] = []
-    for norm in ordered_norms:
-        info = stats[norm]
+    for normalized in ordered_norms:
+        info = stats[normalized]
         score = 0
         if int(info["non_start"]) > 0:
             score += 3
@@ -163,21 +190,39 @@ def _build_keyword_fallback(german_sentences: list[str]) -> list[dict[str, str]]
             score += 2
         if int(info["count"]) > 1:
             score += 1
-        ranked.append((score, int(info["count"]), norm, str(info["display"])))
+        if normalized in GLOSS_MAP:
+            score += 2
+        ranked.append((score, int(info["count"]), normalized, str(info["display"])))
 
     ranked.sort(key=lambda item: (-item[0], -item[1], item[2]))
-    chosen = [(item[3], item[2]) for item in ranked[:5]]
+    return [(display, normalized) for _, _, normalized, display in ranked]
 
-    def _compact_gloss(norm: str) -> str:
-        gloss = keyword_gloss(norm)
-        if len(gloss.split()) <= CONTENT_POLICY.glossary.max_gloss_words:
-            return gloss
-        return "context term"
 
-    return [
-        {"term": display, "gloss": _compact_gloss(norm)}
-        for display, norm in chosen[:5]
-    ]
+def _build_keyword_fallback(
+    german_sentences: list[str],
+    glossary_policy: GlossaryPolicy | None = None,
+) -> list[dict[str, str]]:
+    from .legacy.generate_listening_4 import keyword_gloss
+
+    active_policy = glossary_policy or CONTENT_POLICY.glossary
+    fallback_keywords: list[dict[str, str]] = []
+    for display, normalized in _rank_keyword_candidates(german_sentences):
+        gloss = keyword_gloss(normalized)
+        sanitized = sanitize_keywords(
+            [{"term": display, "gloss": gloss}],
+            active_policy,
+        )
+        if not sanitized:
+            continue
+        keyword = sanitized[0]
+        if not keyword["gloss"]:
+            continue
+        if not keywords_have_conservative_glosses([keyword], active_policy):
+            continue
+        fallback_keywords.append(keyword)
+        if len(fallback_keywords) == 5:
+            break
+    return fallback_keywords
 
 
 def _keywords_match_source(keywords: list[dict], german_sentences: list[str]) -> bool:
@@ -190,16 +235,26 @@ def _keywords_match_source(keywords: list[dict], german_sentences: list[str]) ->
         if not term:
             return False
         normalized_term = _normalize_for_match(term)
-        if not normalized_term:
-            return False
-        if normalized_term not in source:
+        if not normalized_term or normalized_term not in source:
             return False
     return True
 
 
+def _keywords_are_valid(
+    keywords: list[dict[str, str]],
+    german_sentences: list[str],
+    glossary_policy: GlossaryPolicy,
+) -> bool:
+    return (
+        len(keywords) == 5
+        and _keywords_match_source(keywords, german_sentences)
+        and keywords_have_conservative_glosses(keywords, glossary_policy)
+    )
+
 
 def _build_translation_fallback(german_sentences: list[str]) -> list[str]:
     return [f"TODO: add English translation. ({sentence})" for sentence in german_sentences]
+
 
 def _parse_json_payload(text: str) -> dict:
     text = text.strip()
@@ -241,11 +296,16 @@ def _extract_responses_text(resp: object) -> str:
     return text or ""
 
 
-def _call_chat_completions(client: object, model: str, prompt_text: str) -> str:
+def _call_chat_completions(
+    client: object,
+    model: str,
+    prompt_text: str,
+    system_prompt: str = SYSTEM_PROMPT,
+) -> str:
     resp = client.chat.completions.create(  # type: ignore[attr-defined]
         model=model,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt_text},
         ],
         response_format={"type": "json_object"},
@@ -253,30 +313,53 @@ def _call_chat_completions(client: object, model: str, prompt_text: str) -> str:
     return ((resp.choices[0].message.content or "") if resp.choices else "").strip()
 
 
+def _call_openai_json(client: object, model: str, prompt_text: str, system_prompt: str) -> dict:
+    last_responses_error: Exception | None = None
+    if supports_responses_api():
+        try:
+            resp = client.responses.create(
+                model=model,
+                instructions=system_prompt,
+                input=[{"role": "user", "content": prompt_text}],
+            )
+            text = _extract_responses_text(resp)
+            if text:
+                return _parse_json_payload(text)
+        except Exception as exc:
+            last_responses_error = exc
+
+    try:
+        text = _call_chat_completions(client, model, prompt_text, system_prompt)
+        return _parse_json_payload(text)
+    except Exception:
+        if last_responses_error is not None:
+            raise last_responses_error
+        raise
+
+
 def _call_openai(german_sentences: list[str], glossary_policy: GlossaryPolicy) -> dict:
     from openai import OpenAI  # type: ignore[import-not-found]
 
-    client = OpenAI()
     prompt = {
         "task": "Translate and enrich German listening block",
         "requirements": {
             "translation": (
-                "Return one natural English translation per German sentence in the same order. "
+                "Return one natural English translation per German sentence in same order. "
                 "Use idiomatic English. Avoid stiff literal renderings. "
-                "If a line is colloquial, abrupt, funny, or fragmentary, keep that effect in English."
+                "If line is colloquial, abrupt, funny, or fragmentary, keep that effect in English."
             ),
             "keywords": (
                 "Return exactly 5 keyword objects: term + gloss. "
-                "Prefer high-value vocabulary, fixed expressions, or culturally useful words from the block. "
-                "Each keyword term must be copied exactly from the German block text, not invented or normalized. "
+                "Prefer high-value vocabulary, fixed expressions, or culturally useful words from block. "
+                "Each keyword term must be copied exactly from German block text, not invented or normalized. "
                 "Each gloss must be one short neutral dictionary-style meaning in plain English, "
                 f"max {glossary_policy.max_gloss_words} words. "
                 "No slash-separated alternatives, no commas, no parentheses, no usage labels, no dramatic embellishment, "
-                "and no added intensifiers like 'damn' or 'bloody'."
+                "no added intensifiers like 'damn' or 'bloody', and no generic labels like 'context term' or 'verb form in context'."
             ),
             "grammar": (
                 "Return exactly 3 grammar objects: point + explanation. "
-                "Each point must be grounded in a real phrase from the block and explained for B1 learners."
+                "Each point must be grounded in real phrase from block and explained for B1 learners."
             ),
             "format": "Return only valid JSON object. No markdown, no commentary.",
         },
@@ -306,19 +389,94 @@ def _call_openai(german_sentences: list[str], glossary_policy: GlossaryPolicy) -
             "grammar": [{"point": "string", "explanation": "string"}],
         },
     }
-    prompt_text = json.dumps(prompt, ensure_ascii=False)
+    client = OpenAI()
+    model = get_openai_model_name()
+    return _call_openai_json(client, model, json.dumps(prompt, ensure_ascii=False), SYSTEM_PROMPT)
 
-    model = __import__("os").environ.get("OPENAI_MODEL", "gpt-4o-mini")
-    resp = client.responses.create(
-        model=model,
-        instructions=SYSTEM_PROMPT,
-        input=[{"role": "user", "content": prompt_text}],
+
+def _call_keyword_repair_openai(
+    german_sentences: list[str],
+    candidate_terms: list[str],
+    glossary_policy: GlossaryPolicy,
+) -> list[dict[str, str]]:
+    from openai import OpenAI  # type: ignore[import-not-found]
+
+    prompt = {
+        "task": "Repair keyword selection for German listening block",
+        "requirements": {
+            "keywords": (
+                "Return exactly 5 keyword objects: term + gloss. "
+                "Each term must be copied exactly from candidate_terms list. "
+                "Do not invent, normalize, merge, or paraphrase German terms. "
+                "Each gloss must be one short neutral dictionary-style meaning in plain English, "
+                f"max {glossary_policy.max_gloss_words} words. "
+                "No slash-separated alternatives, no commas, no parentheses, no usage labels, no dramatic embellishment, "
+                "no added intensifiers like 'damn' or 'bloody', and no generic labels like 'context term' or 'verb form in context'."
+            ),
+            "selection": (
+                "Prefer terms most useful for comprehension of this block. "
+                "Avoid names or trivial words unless they matter for meaning."
+            ),
+            "format": "Return only valid JSON object with keywords field.",
+        },
+        "german_sentences": german_sentences,
+        "candidate_terms": candidate_terms,
+        "output_json_schema": {
+            "keywords": [{"term": "string", "gloss": "string"}],
+        },
+    }
+    client = OpenAI()
+    model = get_openai_model_name()
+    payload = _call_openai_json(
+        client,
+        model,
+        json.dumps(prompt, ensure_ascii=False),
+        KEYWORD_REPAIR_SYSTEM_PROMPT,
     )
+    repaired = sanitize_keywords(payload.get("keywords", []), glossary_policy)
+    return [
+        {"term": item["term"], "gloss": item["gloss"]}
+        for item in repaired
+    ]
 
-    text = _extract_responses_text(resp)
-    if not text:
-        text = _call_chat_completions(client, model, prompt_text)
-    return _parse_json_payload(text)
+
+def _repair_keywords_with_llm(
+    german_sentences: list[str],
+    glossary_policy: GlossaryPolicy,
+) -> list[dict[str, str]]:
+    candidate_terms = [
+        display
+        for display, _ in _rank_keyword_candidates(german_sentences)[:KEYWORD_REPAIR_CANDIDATE_LIMIT]
+    ]
+    if len(candidate_terms) < 5:
+        return []
+
+    try:
+        repaired_keywords = _call_keyword_repair_openai(
+            german_sentences,
+            candidate_terms,
+            glossary_policy,
+        )
+    except Exception:
+        return []
+
+    if _keywords_are_valid(repaired_keywords, german_sentences, glossary_policy):
+        return repaired_keywords
+    return []
+
+
+def _resolve_keyword_drift(
+    german_sentences: list[str],
+    glossary_policy: GlossaryPolicy,
+) -> list[dict[str, str]]:
+    repaired_keywords = _repair_keywords_with_llm(german_sentences, glossary_policy)
+    if repaired_keywords:
+        return repaired_keywords
+
+    fallback_keywords = _build_keyword_fallback(german_sentences, glossary_policy)
+    if _keywords_are_valid(fallback_keywords, german_sentences, glossary_policy):
+        return fallback_keywords
+    return []
 
 
 def _fetch_valid_payload(german_sentences: list[str], content_policy: ContentPolicy) -> dict:
@@ -335,8 +493,8 @@ def _fetch_valid_payload(german_sentences: list[str], content_policy: ContentPol
 
         raw_translations = payload.get("translations", [])
         translations = [
-            sanitize_short_fragment_translation(de, en, content_policy.translation)
-            for de, en in zip(german_sentences, raw_translations)
+            sanitize_short_fragment_translation(german_sentence, english_sentence, content_policy.translation)
+            for german_sentence, english_sentence in zip(german_sentences, raw_translations)
         ]
         payload["translations"] = translations
         keywords = sanitize_keywords(payload.get("keywords", []), content_policy.glossary)
@@ -347,8 +505,8 @@ def _fetch_valid_payload(german_sentences: list[str], content_policy: ContentPol
         translations_ok = (
             len(raw_translations) == len(german_sentences)
             and all(
-                translation_is_conservative(de, en, content_policy.translation)
-                for de, en in zip(german_sentences, translations)
+                translation_is_conservative(german_sentence, english_sentence, content_policy.translation)
+                for german_sentence, english_sentence in zip(german_sentences, translations)
             )
         )
 
@@ -366,21 +524,11 @@ def _fetch_valid_payload(german_sentences: list[str], content_policy: ContentPol
             len(translations) == len(german_sentences)
             and len(grammar) == 3
             and translations_ok
-            and not keywords_ok
+            and (not keywords_ok or not glosses_ok)
         ):
-            fallback_keywords = sanitize_keywords(
-                _build_keyword_fallback(german_sentences),
-                content_policy.glossary,
-            )
-            if (
-                len(fallback_keywords) == 5
-                and _keywords_match_source(fallback_keywords, german_sentences)
-                and keywords_have_conservative_glosses(
-                    fallback_keywords,
-                    content_policy.glossary,
-                )
-            ):
-                payload["keywords"] = fallback_keywords
+            repaired_keywords = _resolve_keyword_drift(german_sentences, content_policy.glossary)
+            if repaired_keywords:
+                payload["keywords"] = repaired_keywords
                 return payload
 
         if (
@@ -391,12 +539,15 @@ def _fetch_valid_payload(german_sentences: list[str], content_policy: ContentPol
             and not translations_ok
         ):
             fallback_translations = [
-                sanitize_short_fragment_translation(de, en, content_policy.translation)
-                for de, en in zip(german_sentences, _build_translation_fallback(german_sentences))
+                sanitize_short_fragment_translation(german_sentence, english_sentence, content_policy.translation)
+                for german_sentence, english_sentence in zip(
+                    german_sentences,
+                    _build_translation_fallback(german_sentences),
+                )
             ]
             if all(
-                translation_is_conservative(de, en, content_policy.translation)
-                for de, en in zip(german_sentences, fallback_translations)
+                translation_is_conservative(german_sentence, english_sentence, content_policy.translation)
+                for german_sentence, english_sentence in zip(german_sentences, fallback_translations)
             ):
                 payload["translations"] = fallback_translations
                 return payload
@@ -422,16 +573,16 @@ def enrich_file_in_place(md_path: Path) -> int:
         if not _needs_enrichment(block):
             continue
 
-        german = _extract_german_sentences_from_en1(block.fields.get("en_1", ""))
-        if not german:
+        german_sentences = _extract_german_sentences_from_en1(block.fields.get("en_1", ""))
+        if not german_sentences:
             continue
 
-        payload = _fetch_valid_payload(german, CONTENT_POLICY)
+        payload = _fetch_valid_payload(german_sentences, CONTENT_POLICY)
         translations = payload.get("translations", [])
         keywords = payload.get("keywords", [])
         grammar = payload.get("grammar", [])
 
-        block.fields["en_1"] = _render_en1(german, translations)
+        block.fields["en_1"] = _render_en1(german_sentences, translations)
         block.fields["note_1"] = _render_note(keywords, grammar)
         changed = True
 

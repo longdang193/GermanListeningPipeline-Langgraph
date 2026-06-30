@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .blocks import Block
 from .markdown import parse_markdown
+from .llm_provider import get_openai_model_name, supports_responses_api
 
 MAX_BLOCK_SECONDS = 60.0
 TARGET_BLOCK_SECONDS = 45.0
@@ -111,12 +112,22 @@ def _choose_boundary_with_llm(candidates: list[dict], block_heading: str, total_
         from openai import OpenAI  # type: ignore[import-not-found]
 
         client = OpenAI()
-        model = __import__("os").environ.get("OPENAI_MODEL", "gpt-4o-mini")
-        resp = client.responses.create(
-            model=model,
-            input=[{"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}],
-        )
-        text = getattr(resp, "output_text", "").strip()
+        model = get_openai_model_name()
+        if supports_responses_api():
+            resp = client.responses.create(
+                model=model,
+                input=[{"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}],
+            )
+            text = getattr(resp, "output_text", "").strip()
+        else:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
+                ],
+                response_format={"type": "json_object"},
+            )
+            text = ((resp.choices[0].message.content or "") if resp.choices else "").strip()
         payload = json.loads(text)
         idx = payload.get("selected_index")
         conf = float(payload.get("confidence", 0.0))
@@ -184,3 +195,5 @@ def suggest_boundaries(md_path: Path, *, evidence_path: Path | None = None) -> i
     uncertain_count = sum(1 for r in rows if r.get("uncertain"))
     print(f"Boundary suggestions summary: blocks={len(rows)}, uncertain={uncertain_count}")
     return 0
+
+

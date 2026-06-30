@@ -5,7 +5,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .runtime_paths import get_repo_root
+from .runtime_paths import get_config_dir
 
 
 @dataclass(frozen=True)
@@ -13,6 +13,7 @@ class GlossaryPolicy:
     max_gloss_words: int
     forbidden_punctuation: tuple[str, ...]
     forbidden_prefixes: tuple[str, ...]
+    banned_exact_glosses: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,11 @@ class ContentPolicy:
 
 
 def default_policy_path() -> Path:
-    return get_repo_root() / "configs" / "policy.toml"
+    return get_config_dir() / "policy.toml"
+
+
+def _normalize_gloss_value(gloss: str) -> str:
+    return " ".join(gloss.split()).casefold()
 
 
 def load_content_policy(path: Path | None = None) -> ContentPolicy:
@@ -44,6 +49,10 @@ def load_content_policy(path: Path | None = None) -> ContentPolicy:
     max_gloss_words = int(glossary.get("max_gloss_words", 5))
     forbidden_punctuation = tuple(str(x) for x in glossary.get("forbidden_punctuation", []))
     forbidden_prefixes = tuple(str(x).casefold() for x in glossary.get("forbidden_prefixes", []))
+    banned_exact_glosses = tuple(
+        _normalize_gloss_value(str(x))
+        for x in glossary.get("banned_exact_glosses", [])
+    )
     neutralize_short_fragments_max_source_words = int(
         translation.get("neutralize_short_fragments_max_source_words", 2)
     )
@@ -56,6 +65,7 @@ def load_content_policy(path: Path | None = None) -> ContentPolicy:
             max_gloss_words=max_gloss_words,
             forbidden_punctuation=forbidden_punctuation,
             forbidden_prefixes=forbidden_prefixes,
+            banned_exact_glosses=banned_exact_glosses,
         ),
         translation=TranslationPolicy(
             neutralize_short_fragments_max_source_words=neutralize_short_fragments_max_source_words,
@@ -83,6 +93,8 @@ def gloss_is_conservative(gloss: str, policy: GlossaryPolicy) -> bool:
         for word in normalized_gloss.split()
     ):
         return False
+    if _normalize_gloss_value(normalized_gloss) in policy.banned_exact_glosses:
+        return False
     if len(normalized_gloss.split()) > policy.max_gloss_words:
         return False
     return True
@@ -99,7 +111,12 @@ def sanitize_gloss(gloss: str, policy: GlossaryPolicy) -> str:
         for word in sanitized.split()
         if not word.casefold().startswith(policy.forbidden_prefixes)
     ]
-    return " ".join(kept_words)
+    sanitized = " ".join(kept_words)
+    if _normalize_gloss_value(sanitized) in policy.banned_exact_glosses:
+        return ""
+    if len(sanitized.split()) > policy.max_gloss_words:
+        return ""
+    return sanitized
 
 
 def sanitize_keywords(
