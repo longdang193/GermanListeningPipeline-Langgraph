@@ -45,3 +45,8 @@ def test_route_reason_for_semantic_fallback() -> None:
     assert _route_reason("hitl", "semantic", "ignored") == (
         "transcript has no marker anchors, so app uses timing/sentence-based splitting."
     )
+
+
+def test_prompt_mode_accepts_agentic_alias(monkeypatch) -> None:
+    monkeypatch.setattr("builtins.input", lambda _prompt: "agentic")
+    assert _prompt_mode() == "hitl"

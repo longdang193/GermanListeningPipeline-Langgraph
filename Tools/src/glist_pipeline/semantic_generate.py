@@ -3,15 +3,30 @@ from __future__ import annotations
 import html
 import json
 import re
+import unicodedata
 from pathlib import Path
 
 from .runtime_paths import get_repo_root
 
 REPO_ROOT = get_repo_root()
-OUTPUT = REPO_ROOT / "Outputs" / "Listening-generated.md"
+OUTPUT_FINAL = REPO_ROOT / "Outputs" / "Listening-generated.md"
+OUTPUT_DRAFT = REPO_ROOT / "Outputs" / "Listening-generated.draft.md"
+OUTPUT = OUTPUT_FINAL
 TARGET_BLOCK_SECONDS = 45.0
 MAX_BLOCK_SECONDS = 60.0
 MIN_BLOCK_SECONDS = 30.0
+INSTRUCTION_PATTERNS = (
+    r"^zertifikat b1\b",
+    r"^modul horen\b",
+    r"^horen teil\b",
+    r"^sie horen nun\b",
+    r"^sie horen jeden text\b",
+    r"^zu jedem text\b",
+    r"^wahlen sie\b",
+    r"^lesen sie\b",
+    r"^dazu haben sie\b",
+    r"^sie horen eine\b",
+)
 
 
 def latest_transcript() -> Path:
@@ -95,6 +110,16 @@ def spans(sentence: list[dict]) -> str:
 def sentence_plain(sentence: list[dict]) -> str:
     return " ".join(str(w["text"]) for w in sentence).strip()
 
+def _normalize_sentence(text: str) -> str:
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"\s+", " ", text).strip().casefold()
+    return text
+
+def is_instruction_sentence(text: str) -> bool:
+    normalized = _normalize_sentence(text)
+    return any(re.match(pattern, normalized) for pattern in INSTRUCTION_PATTERNS)
+
 
 def _topic_from_block(block: list[list[dict]]) -> str:
     first = sentence_plain(block[0]) if block else ""
@@ -128,6 +153,7 @@ def placeholder_note() -> str:
 def generate_semantic(
     transcript_path: Path | None = None,
     audio_name: str | None = None,
+    output_path: Path | None = None,
 ) -> int:
     tp = transcript_path or latest_transcript()
     audio = audio_name or latest_audio_name()
@@ -141,8 +167,19 @@ def generate_semantic(
     sentences = words_to_sentences(words)
     if not sentences:
         sentences = [words]
+    sentences = [sentence for sentence in sentences if not is_instruction_sentence(sentence_plain(sentence))]
+    if not sentences:
+        sentences = [words]
 
     blocks = split_into_blocks(sentences)
+    block_durations = [round(block[-1][-1]["end"] - block[0][0]["start"], 2) for block in blocks]
+    print(
+        "Semantic split summary: "
+        f"sentences={len(sentences)} blocks={len(blocks)} "
+        f"target~{TARGET_BLOCK_SECONDS:.0f}s min={MIN_BLOCK_SECONDS:.0f}s max={MAX_BLOCK_SECONDS:.0f}s"
+    )
+    if block_durations:
+        print(f"Block durations: {block_durations[:8]}{'...' if len(block_durations) > 8 else ''}")
 
     out = ["TARGET DECK: TEST", ""]
     for i, block in enumerate(blocks, start=1):
@@ -173,7 +210,8 @@ def generate_semantic(
             "",
         ])
 
-    OUTPUT.write_text("\n".join(out), encoding="utf-8")
-    print(f"Generated {OUTPUT} from {tp.name} (semantic fallback)")
+    target = output_path or OUTPUT
+    target.write_text("\n".join(out), encoding="utf-8")
+    print(f"Generated {target} from {tp.name} (semantic fallback)")
     print(f"Total blocks: {len(blocks)}")
     return 0

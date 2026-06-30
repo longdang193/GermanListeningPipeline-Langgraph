@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 from pathlib import Path
 import unicodedata
 import json
@@ -15,14 +16,14 @@ from .modes import classic, marker
 from .suggest_boundaries import suggest_boundaries
 from .apply_boundary_suggestions import apply_boundary_suggestions, load_latest_suggestions
 from .mode_router import append_router_run_record, detect_transcript_profile, route_mode
-from .semantic_generate import generate_semantic
+from .semantic_generate import OUTPUT_DRAFT as SEMANTIC_DRAFT_MD, OUTPUT_FINAL as SEMANTIC_FINAL_MD, generate_semantic
 from .enrich_llm import enrich_file_in_place
-from .quality_gate import BANNED
+from .quality_gate import BANNED, find_quality_issues
 from .markdown import parse_markdown, render_document
 from .runtime_paths import get_repo_root
 
 REPO_ROOT = get_repo_root()
-OUTPUT_MD = REPO_ROOT / "Outputs" / "Listening-generated.md"
+OUTPUT_MD = SEMANTIC_FINAL_MD
 
 Mode = Literal["marker", "classic", "hitl"]
 
@@ -39,6 +40,7 @@ MODE_ALIASES: dict[str, Mode] = {
     "classic": "classic",
     "3": "hitl",
     "agent": "hitl",
+    "agentic": "hitl",
     "agent suggestion": "hitl",
     "agent suggestions": "hitl",
     "guided review": "hitl",
@@ -209,14 +211,17 @@ def _run_shared_postprocess(md_path: Path) -> int:
     enrich_file_in_place(md_path)
     print("Enrichment complete. Running placeholder check...")
     print("Postprocess: enrichment complete. Running placeholder check...")
-    text = md_path.read_text(encoding="utf-8")
-    hits = [pat for pat in BANNED if re.search(pat, text)]
+    hits = find_quality_issues(md_path)
     if hits:
         print("Postprocess failed: placeholder content remains")
-        for h in hits:
-            print(f" - {h}")
+        for pattern, value in hits:
+            print(f" - {pattern}: {value}")
         return 2
     return 0
+
+def _promote_output(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
 
 _SPAN_RE = re.compile(r"<span\s+data-start=\"[\d.]+\"\s+data-end=\"[\d.]+\">([^<]*)</span>")
 
@@ -308,7 +313,7 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
     elif routed == "classic":
         rc = classic.generate()
     else:
-        rc = generate_semantic(transcript_path=transcript_path, audio_name=audio_path.name)
+        rc = generate_semantic(transcript_path=transcript_path, audio_name=audio_path.name, output_path=SEMANTIC_DRAFT_MD)
 
     append_router_run_record(
         REPO_ROOT / "Outputs" / "review_logs" / "mode_router_runs.jsonl",
@@ -319,7 +324,7 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
             "outcome": "ok" if rc == 0 else f"generate_failed:{rc}",
             "transcript": str(transcript_path),
             "audio": str(audio_path),
-            "output": str(OUTPUT_MD),
+            "output": str(SEMANTIC_DRAFT_MD if routed == "semantic" else OUTPUT_MD),
         },
     )
 
@@ -410,7 +415,7 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
             rc = classic.generate()
             _normalize_telc_blocks_from_de_ssot(OUTPUT_MD)
         else:
-            rc = generate_semantic(transcript_path=transcript_path, audio_name=audio_path.name)
+            rc = generate_semantic(transcript_path=transcript_path, audio_name=audio_path.name, output_path=SEMANTIC_DRAFT_MD)
         if rc != 0:
             return rc
 
@@ -421,7 +426,11 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
         if rc != 0:
             return rc
 
-    post = _run_shared_postprocess(OUTPUT_MD)
+    post_path = SEMANTIC_DRAFT_MD if routed == "semantic" else OUTPUT_MD
+    if routed == "semantic":
+        print(f"Draft path: {SEMANTIC_DRAFT_MD}")
+        print(f"Final path: {OUTPUT_MD}")
+    post = _run_shared_postprocess(post_path)
     if post != 0:
         append_router_run_record(
             REPO_ROOT / "Outputs" / "review_logs" / "mode_router_runs.jsonl",
@@ -432,11 +441,14 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
                 "outcome": f"postprocess_failed:{post}",
                 "transcript": str(transcript_path),
                 "audio": str(audio_path),
-                "output": str(OUTPUT_MD),
+                "output": str(post_path),
                 "quality_gate_pass": False,
             },
         )
         return post
+
+    if routed == "semantic":
+        _promote_output(SEMANTIC_DRAFT_MD, OUTPUT_MD)
 
     append_router_run_record(
         REPO_ROOT / "Outputs" / "review_logs" / "mode_router_runs.jsonl",
@@ -447,7 +459,7 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
             "outcome": "postprocess_ok",
             "transcript": str(transcript_path),
             "audio": str(audio_path),
-            "output": str(OUTPUT_MD),
+            "output": str(post_path),
             "quality_gate_pass": True,
         },
     )
