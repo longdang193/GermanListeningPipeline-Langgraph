@@ -11,6 +11,7 @@ from .glossary_policy import (
     translation_is_conservative,
 )
 from .markdown import parse_markdown
+from .semantic_generate import sentence_compare_key
 
 BANNED = [
     r"TODO: add English translation\.",
@@ -30,6 +31,22 @@ def _extract_translation_pairs(en_1: str) -> list[tuple[str, str]]:
             pairs.append((match.group(1).strip(), match.group(2).strip()))
     return pairs
 
+def _extract_normalized_de_sentences(de_1: str) -> list[str]:
+    sentences: list[str] = []
+    for part in re.split(r"\s*<br>\s*", de_1.strip()):
+        plain = re.sub(r"<[^>]+>", "", part).strip()
+        normalized = sentence_compare_key(plain)
+        if normalized:
+            sentences.append(normalized)
+    return sentences
+
+def _has_adjacent_overlap(previous: list[str], current: list[str], threshold: int = 2) -> bool:
+    limit = min(len(previous), len(current))
+    for width in range(limit, threshold - 1, -1):
+        if previous[-width:] == current[:width]:
+            return True
+    return False
+
 
 def find_quality_issues(path: Path) -> list[tuple[str, str]]:
     text = path.read_text(encoding="utf-8")
@@ -40,6 +57,7 @@ def find_quality_issues(path: Path) -> list[tuple[str, str]]:
             hits.append((pat, m.group(0)))
 
     doc = parse_markdown(text)
+    previous_sentences: list[str] = []
     for idx, block in enumerate(doc.blocks, start=1):
         en_1 = block.fields.get("en_1", "")
         for german_sentence, english_sentence in _extract_translation_pairs(en_1):
@@ -55,6 +73,11 @@ def find_quality_issues(path: Path) -> list[tuple[str, str]]:
         keywords = extract_note_keywords(note_1)
         if keywords and not keywords_have_conservative_glosses(keywords, CONTENT_POLICY.glossary):
             hits.append((f"block_{idx}_keyword_gloss_policy", block.heading))
+
+        current_sentences = _extract_normalized_de_sentences(block.fields.get("de_1", ""))
+        if previous_sentences and _has_adjacent_overlap(previous_sentences, current_sentences):
+            hits.append((f"block_{idx}_adjacent_overlap", block.heading))
+        previous_sentences = current_sentences
     return hits
 
 
