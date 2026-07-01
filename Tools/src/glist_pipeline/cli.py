@@ -202,7 +202,45 @@ def _detect_blocks_mode(md_path: Path) -> str:
 
 
 def _split_mode_for_blocks_mode(mode: str) -> str:
-    return "classic" if mode == "classic" else "marker"
+    return "classic" if mode in {"classic", "semantic"} else "marker"
+
+def _ensure_repo_audio(source: Path) -> Path:
+    target = REPO_ROOT / "Audios" / source.name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source.resolve() != target.resolve():
+        shutil.copyfile(source, target)
+    return target
+
+def _get_first_block_wave_name(md_path: Path) -> str:
+    doc = parse_markdown(md_path.read_text(encoding="utf-8"))
+    if not doc.blocks:
+        return ""
+    return Path(doc.blocks[0].fields.get("de_1_wave", "").strip()).name
+
+def _prompt_optional_path(prompt: str) -> Path | None:
+    raw = input(prompt).strip()
+    if not raw:
+        return None
+    return _repair_console_path(raw)
+
+def _ensure_blocks_audio_available(blocks_path: Path) -> int:
+    wave_name = _get_first_block_wave_name(blocks_path)
+    if not wave_name:
+        return 0
+    target = REPO_ROOT / "Audios" / wave_name
+    if target.exists():
+        return 0
+    print(f"Audio source missing: {target}")
+    source = _prompt_optional_path("Original audio path [blank=cancel]: ")
+    if source is None:
+        print("Action cancelled.")
+        return 1
+    if not source.exists():
+        print(f"Audio not found: {source}")
+        return 1
+    shutil.copyfile(source, target)
+    print(f"Copied audio into repo cache: {target}")
+    return 0
 
 def _run_shared_postprocess(md_path: Path) -> int:
     print("Enrichment started...")
@@ -275,8 +313,12 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
     print(f"Transcript file: {transcript_path}")
     print(f"Audio file: {audio_path}")
 
+    repo_audio = _ensure_repo_audio(audio_path)
+    if repo_audio != audio_path:
+        print(f"Cached audio for later splitting: {repo_audio}")
+
     _set_latest(transcript_path)
-    _set_latest(audio_path)
+    _set_latest(repo_audio)
 
     print("Checking transcript profile...")
     profile = detect_transcript_profile(transcript_path)
@@ -484,7 +526,10 @@ def _run_action_create_audios_from_blocks(blocks_path: Path) -> int:
     print(f"Detected blocks mode: {mode}")
     if split_mode != mode:
         print(f"Using deterministic splitter: {split_mode}")
-    return _mode_impl(split_mode).split()
+    audio_ready = _ensure_blocks_audio_available(blocks_path)
+    if audio_ready != 0:
+        return audio_ready
+    return _mode_impl(split_mode).split(blocks_path)
 
 def _repair_console_path(raw: str) -> Path:
     value = raw.strip().strip('"')
