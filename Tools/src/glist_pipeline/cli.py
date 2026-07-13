@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import re
 import shutil
 from pathlib import Path
@@ -8,11 +9,11 @@ import unicodedata
 import json
 from typing import Literal
 
-from . import langgraph_app
 from .hitl import DecisionAction, HitlEngine, append_review_log
 from .labels import load_taxonomy
 from .models import LabelSuggestion
 from .modes import classic, marker
+from . import merge_audio as merge_audio_lib
 from .suggest_boundaries import suggest_boundaries
 from .apply_boundary_suggestions import apply_boundary_suggestions, load_latest_suggestions
 from .mode_router import append_router_run_record, detect_transcript_profile, route_mode
@@ -576,6 +577,42 @@ def _prompt_mode() -> Mode | None:
     return MODE_ALIASES.get(raw_mode)
 
 
+def _prompt_merge_markers() -> str | None:
+    print("Choose merge mode:")
+    print("1) with markers")
+    print("2) without markers")
+    raw = input("Mode [1/2 or name]: ").strip().lower()
+    aliases = {
+        "1": "with",
+        "with": "with",
+        "with markers": "with",
+        "marker": "with",
+        "markers": "with",
+        "2": "without",
+        "without": "without",
+        "without markers": "without",
+        "plain": "without",
+        "no markers": "without",
+    }
+    return aliases.get(raw)
+
+
+def _prompt_merge_prompt_mode() -> str | None:
+    print("Choose prompt mode:")
+    print("1) generated")
+    print("2) recorded")
+    raw = input("Prompt mode [1/2 or name]: ").strip().lower()
+    aliases = {
+        "1": "generated",
+        "generated": "generated",
+        "gen": "generated",
+        "2": "recorded",
+        "recorded": "recorded",
+        "rec": "recorded",
+    }
+    return aliases.get(raw)
+
+
 def run_menu_action_1() -> int:
     transcript = _prompt_path("Input transcript path: ")
     audio = _prompt_path("Input audio path: ")
@@ -596,13 +633,56 @@ def run_menu_action_2() -> int:
     return _run_action_create_audios_from_blocks(path)
 
 
+def run_menu_action_3() -> int:
+    default_input = merge_audio_lib.DEFAULT_INPUT_DIR
+    default_marked = merge_audio_lib.DEFAULT_MARKER_OUTPUT
+    default_plain = merge_audio_lib.DEFAULT_PLAIN_OUTPUT
+    input_dir = _prompt_path(f"Input folder [{default_input}]: ", default_input)
+    markers = _prompt_merge_markers()
+    if markers is None:
+        print("Invalid merge mode.")
+        return 1
+    default_output = default_marked if markers == "with" else default_plain
+    output_file = _prompt_path(f"Output file [{default_output}]: ", default_output)
+    prompt_mode = "generated"
+    prompt_dir: Path | None = None
+    voice_name = ""
+    if markers == "with":
+        prompt_mode = _prompt_merge_prompt_mode() or ""
+        if prompt_mode not in {"generated", "recorded"}:
+            print("Invalid prompt mode.")
+            return 1
+        if prompt_mode == "recorded":
+            prompt_dir = _prompt_path(
+                f"Prompt folder [{merge_audio_lib.DEFAULT_PROMPT_DIR}]: ",
+                merge_audio_lib.DEFAULT_PROMPT_DIR,
+            )
+        else:
+            voice_name = input("Voice name override [blank=auto German voice]: ").strip()
+    try:
+        merged = merge_audio_lib.merge_audio(
+            input_dir=input_dir,
+            output_file=output_file,
+            markers=markers,
+            prompt_mode=prompt_mode,
+            prompt_dir=prompt_dir,
+            voice_name=voice_name,
+        )
+    except Exception as exc:
+        print(str(exc))
+        return 1
+    print(f"Merged file created at: {merged}")
+    return 0
+
+
 def run_menu() -> int:
     while True:
         print("German_Listening MVP")
         print("1) CREATE LISTENING BLOCKS for ANKI")
         print("2) CREATE AUDIOS and TRANSCRIPTS from CREATED LISTENING BLOCKS")
-        print("3) EXIT")
-        choice = input("Select [1/2/3]: ").strip()
+        print("3) MERGE AUDIOS")
+        print("4) EXIT")
+        choice = input("Select [1/2/3/4]: ").strip()
         if choice == "1":
             rc = run_menu_action_1()
             if rc == 0:
@@ -618,6 +698,13 @@ def run_menu() -> int:
                 print(f"Action ended with code {rc}. Choose next action or exit.")
             continue
         if choice == "3":
+            rc = run_menu_action_3()
+            if rc == 0:
+                print("Action complete. Choose next action or exit.")
+            else:
+                print(f"Action ended with code {rc}. Choose next action or exit.")
+            continue
+        if choice == "4":
             return 0
         print("Invalid selection")
 
@@ -645,6 +732,7 @@ def cmd_run_all(args: argparse.Namespace) -> int:
 
 def cmd_live_run(args: argparse.Namespace) -> int:
     try:
+        langgraph_app = importlib.import_module("glist_pipeline.langgraph_app")
         langgraph_app.run(root=REPO_ROOT, mode=args.mode)
         return 0
     except ModuleNotFoundError as exc:
@@ -678,6 +766,29 @@ def cmd_labels(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_merge(args: argparse.Namespace) -> int:
+    if args.markers == "without" and args.prompt_mode != "generated":
+        print("--prompt-mode is only valid with --markers with")
+        return 2
+    if args.markers == "without" and args.prompt_dir:
+        print("--prompt-dir is only valid with --markers with")
+        return 2
+    if args.markers == "without" and args.voice_name:
+        print("--voice-name is only valid with --markers with")
+        return 2
+    if args.markers == "with" and args.prompt_mode == "recorded" and not args.prompt_dir:
+        print("--prompt-dir is required with recorded prompt mode")
+        return 2
+    try:
+        result = merge_audio_lib.merge_audio_from_args(args)
+    except Exception as exc:
+        print(str(exc))
+        return 1
+    if not args.list_voices:
+        print(f"Merged file created at: {result}")
+    return 0
+
+
 def cmd_menu(_: argparse.Namespace) -> int:
     return run_menu()
 
@@ -693,10 +804,21 @@ def build_parser() -> argparse.ArgumentParser:
         ("split", cmd_split),
         ("run-all", cmd_run_all),
         ("live-run", cmd_live_run),
+        ("merge", cmd_merge),
     ):
         p = sub.add_parser(name)
         if name in {"generate", "validate", "split", "run-all", "live-run"}:
             p.add_argument("--mode", choices=["classic", "marker"], required=True)
+        if name == "merge":
+            p.add_argument("--input-dir", required=True)
+            p.add_argument("--output-file", required=True)
+            p.add_argument("--markers", choices=["with", "without"], required=True)
+            p.add_argument("--prompt-mode", choices=["generated", "recorded"], default="generated")
+            p.add_argument("--prompt-dir", default="")
+            p.add_argument("--voice-name", default="")
+            p.add_argument("--bitrate-kbps", type=int, default=merge_audio_lib.DEFAULT_BITRATE_KBPS)
+            p.add_argument("--keep-temp-files", action="store_true")
+            p.add_argument("--list-voices", action="store_true")
         p.set_defaults(func=func)
 
     labels = sub.add_parser("labels")

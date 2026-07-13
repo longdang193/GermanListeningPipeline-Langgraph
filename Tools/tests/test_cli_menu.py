@@ -6,7 +6,7 @@ from glist_pipeline import legacy_runner
 
 
 def test_run_menu_stays_open_after_action(monkeypatch, capsys) -> None:
-    answers = iter(["1", "3"])
+    answers = iter(["1", "4"])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
     calls = {"count": 0}
 
@@ -21,6 +21,8 @@ def test_run_menu_stays_open_after_action(monkeypatch, capsys) -> None:
     out = capsys.readouterr().out
     assert "Action complete. Choose next action or exit." in out
     assert out.count("German_Listening MVP") == 2
+    assert "3) MERGE AUDIOS" in out
+    assert "4) EXIT" in out
 
 
 def test_action_2_routes_semantic_blocks_to_classic_split(monkeypatch, tmp_path, capsys) -> None:
@@ -68,3 +70,77 @@ def test_run_legacy_uses_static_entrypoint_when_frozen(monkeypatch) -> None:
 
     assert legacy_runner.run_legacy("split_and_subtitle_4.py", ["out.md"]) == 0
     assert seen["argv"] == ["split_and_subtitle_4.py", "out.md"]
+
+
+def test_menu_action_3_dispatches_to_merge_engine(monkeypatch, capsys) -> None:
+    answers = iter(["Audios/Merge", "2", "Outputs/Merge/out.mp3"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    seen: dict[str, object] = {}
+
+    def fake_merge_audio(**kwargs):
+        seen.update(kwargs)
+        return Path("Outputs/Merge/out.mp3")
+
+    monkeypatch.setattr(cli.merge_audio_lib, "merge_audio", fake_merge_audio)
+
+    assert cli.run_menu_action_3() == 0
+    assert seen["markers"] == "without"
+    assert seen["prompt_mode"] == "generated"
+    out = capsys.readouterr().out
+    assert "Merged file created at:" in out
+
+
+def test_build_parser_accepts_merge_command() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args([
+        "merge",
+        "--input-dir",
+        "Audios/Merge",
+        "--output-file",
+        "Outputs/Merge/out.mp3",
+        "--markers",
+        "without",
+    ])
+
+    assert args.command == "merge"
+    assert args.markers == "without"
+    assert args.func is cli.cmd_merge
+
+
+def test_cmd_merge_rejects_prompt_mode_without_markers(capsys) -> None:
+    args = SimpleNamespace(
+        markers="without",
+        prompt_mode="recorded",
+        prompt_dir="Audios/MergePrompts",
+        voice_name="",
+        list_voices=False,
+    )
+
+    assert cli.cmd_merge(args) == 2
+    assert "--prompt-mode is only valid with --markers with" in capsys.readouterr().out
+
+
+def test_cmd_merge_dispatches_to_shared_engine(monkeypatch, capsys) -> None:
+    args = SimpleNamespace(
+        markers="with",
+        prompt_mode="generated",
+        prompt_dir="",
+        voice_name="",
+        input_dir="Audios/Merge",
+        output_file="Outputs/Merge/out.mp3",
+        bitrate_kbps=192,
+        keep_temp_files=False,
+        list_voices=False,
+    )
+    seen: dict[str, object] = {}
+
+    def fake_merge_audio_from_args(passed_args):
+        seen["args"] = passed_args
+        return Path("Outputs/Merge/out.mp3")
+
+    monkeypatch.setattr(cli.merge_audio_lib, "merge_audio_from_args", fake_merge_audio_from_args)
+
+    assert cli.cmd_merge(args) == 0
+    assert seen["args"] is args
+    assert "Merged file created at:" in capsys.readouterr().out

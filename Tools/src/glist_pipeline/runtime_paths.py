@@ -5,10 +5,12 @@ from pathlib import Path
 
 
 def _looks_like_workspace_root(path: Path) -> bool:
+    if not (path / "configs").exists():
+        return False
     return (
-        (path / "configs").exists()
-        and (path / "Outputs").exists()
-        and (path / "Transcripts").exists()
+        (path / "Tools" / "src").exists()
+        or (path / "Requirement").exists()
+        or (path / "docs").exists()
     )
 
 
@@ -33,7 +35,7 @@ def _workspace_candidates() -> list[Path]:
 
     if getattr(sys, "frozen", False):
         exe_dir = Path(sys.executable).resolve().parent
-        candidates.extend([exe_dir, exe_dir.parent])
+        candidates.extend([exe_dir, exe_dir.parent, exe_dir.parent.parent])
     else:
         candidates.append(Path(__file__).resolve().parents[3])
 
@@ -46,7 +48,11 @@ def get_workspace_root() -> Path:
             return candidate
 
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent.parent
+        exe_dir = Path(sys.executable).resolve().parent
+        for candidate in (exe_dir, exe_dir.parent, exe_dir.parent.parent):
+            if (candidate / "configs").exists():
+                return candidate
+        return exe_dir.parent.parent
 
     return Path(__file__).resolve().parents[3]
 
@@ -65,7 +71,7 @@ def get_config_dir() -> Path:
 
     if getattr(sys, "frozen", False):
         exe_dir = Path(sys.executable).resolve().parent
-        for candidate in (exe_dir / "configs", exe_dir.parent / "configs"):
+        for candidate in (exe_dir / "configs", exe_dir.parent / "configs", exe_dir.parent.parent / "configs"):
             if candidate.exists():
                 return candidate
 
