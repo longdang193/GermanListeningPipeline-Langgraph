@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import os
 import re
 import shutil
 from pathlib import Path
@@ -681,8 +682,9 @@ def run_menu() -> int:
         print("1) CREATE LISTENING BLOCKS for ANKI")
         print("2) CREATE AUDIOS and TRANSCRIPTS from CREATED LISTENING BLOCKS")
         print("3) MERGE AUDIOS")
+        print("O) OPEN OUTPUTS")
         print("4) EXIT")
-        choice = input("Select [1/2/3/4]: ").strip()
+        choice = input("Select [1/2/3/O/4]: ").strip().lower()
         if choice == "1":
             rc = run_menu_action_1()
             if rc == 0:
@@ -703,6 +705,9 @@ def run_menu() -> int:
                 print("Action complete. Choose next action or exit.")
             else:
                 print(f"Action ended with code {rc}. Choose next action or exit.")
+            continue
+        if choice == "o":
+            os.startfile(REPO_ROOT / "Outputs")
             continue
         if choice == "4":
             return 0

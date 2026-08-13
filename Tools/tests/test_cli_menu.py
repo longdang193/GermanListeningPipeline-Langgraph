@@ -22,7 +22,18 @@ def test_run_menu_stays_open_after_action(monkeypatch, capsys) -> None:
     assert "Action complete. Choose next action or exit." in out
     assert out.count("German_Listening MVP") == 2
     assert "3) MERGE AUDIOS" in out
+    assert "O) OPEN OUTPUTS" in out
     assert "4) EXIT" in out
+
+
+def test_run_menu_opens_outputs_folder(monkeypatch) -> None:
+    answers = iter(["O", "4"])
+    opened: list[Path] = []
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    monkeypatch.setattr(cli.os, "startfile", opened.append)
+
+    assert cli.run_menu() == 0
+    assert opened == [cli.REPO_ROOT / "Outputs"]
 
 
 def test_action_2_routes_semantic_blocks_to_classic_split(monkeypatch, tmp_path, capsys) -> None:
