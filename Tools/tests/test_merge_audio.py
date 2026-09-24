@@ -105,6 +105,25 @@ def test_select_sapi_voice_requires_german_voice_when_unset() -> None:
         merge_audio.select_sapi_voice(voices, requested_voice_name="")
 
 
+def test_generate_prompt_wav_interpolates_powershell_inputs(monkeypatch, tmp_path: Path) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs):
+        commands.append(command)
+        return type("Result", (), {"returncode": 0, "stderr": "", "stdout": ""})()
+
+    monkeypatch.setattr(merge_audio.subprocess, "run", fake_run)
+
+    target = tmp_path / "prompt.wav"
+    merge_audio.generate_prompt_wav(target, "Teil 1", "")
+
+    script = commands[0][-1]
+    assert "$requested = '';" in script
+    assert "$spoken = 'Teil 1';" in script
+    assert f"$target = '{target}';" in script
+    assert "{requested}" not in script
+
+
 def test_write_concat_manifest_preserves_order_and_escaping(tmp_path: Path) -> None:
     stage_dir = tmp_path / "_merge_stage"
     stage_dir.mkdir()

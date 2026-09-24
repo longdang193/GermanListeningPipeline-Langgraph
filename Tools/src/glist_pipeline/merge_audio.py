@@ -169,9 +169,9 @@ def generate_prompt_wav(target_wave: Path, text: str, requested_voice_name: str)
     escaped_text = text.replace("'", "''")
     command = powershell_command(
         ""
-        "$requested = '{requested}';"
-        "$spoken = '{escaped_text}';"
-        "$target = '{target_wave}';"
+        f"$requested = '{requested}';"
+        f"$spoken = '{escaped_text}';"
+        f"$target = '{target_wave}';"
         "$voice = New-Object -ComObject SAPI.SpVoice;"
         "try {"
         "  $voices = @($voice.GetVoices());"
