@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from glist_pipeline.cli import _prompt_mode, _route_label, _route_reason
-from glist_pipeline.mode_router import TranscriptProfile, route_mode
+from glist_pipeline.mode_router import TranscriptProfile, detect_transcript_profile, route_mode
 
 
 def test_agent_suggestions_routes_marker_when_marker_capable() -> None:
@@ -20,6 +20,25 @@ def test_marker_mode_fails_typed_on_non_marker() -> None:
     profile = TranscriptProfile(marker_capable=False, classic_capable=True, reason="no markers")
     with pytest.raises(ValueError, match="marker_mode_unavailable_for_transcript"):
         route_mode("marker", profile)
+
+
+def test_classic_mode_rejects_transcript_without_classic_layout() -> None:
+    profile = TranscriptProfile(marker_capable=True, classic_capable=False, reason="marker transcript")
+
+    with pytest.raises(ValueError, match="classic_mode_unavailable_for_transcript"):
+        route_mode("classic", profile)
+
+
+def test_detect_profile_rejects_short_classic_layout(tmp_path: Path) -> None:
+    transcript = tmp_path / "marker.json"
+    transcript.write_text(
+        '{"segments": [{"words": [{"type": "word", "text": "Teil"}]}]}',
+        encoding="utf-8",
+    )
+
+    profile = detect_transcript_profile(transcript)
+
+    assert profile.classic_capable is False
 
 
 def test_prompt_mode_accepts_numeric_shortcuts(monkeypatch) -> None:

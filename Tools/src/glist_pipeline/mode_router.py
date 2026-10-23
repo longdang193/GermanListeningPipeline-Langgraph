@@ -7,6 +7,7 @@ from pathlib import Path
 
 MARKER_RE = re.compile(r"\bteil\s+(eins|zwei|drei|vier|f(?:u|ü)nf|sechs|sieben|acht|neun|zehn|\d+)\b", re.IGNORECASE)
 END_RE = re.compile(r"\bende\s+des\s+teil\s+(eins|zwei|drei|vier|f(?:u|ü)nf|sechs|sieben|acht|neun|zehn|\d+)\b", re.IGNORECASE)
+CLASSIC_MIN_SEGMENTS = 76
 
 
 @dataclass(frozen=True)
@@ -30,8 +31,11 @@ def detect_transcript_profile(transcript_path: Path) -> TranscriptProfile:
     marker_hits = len(MARKER_RE.findall(joined))
     end_hits = len(END_RE.findall(joined))
     marker_capable = marker_hits > 0 and end_hits > 0
-    classic_capable = word_count > 0
-    reason = f"marker_hits={marker_hits}, end_hits={end_hits}, words={word_count}"
+    classic_capable = word_count > 0 and len(segments) >= CLASSIC_MIN_SEGMENTS
+    reason = (
+        f"marker_hits={marker_hits}, end_hits={end_hits}, "
+        f"words={word_count}, segments={len(segments)}"
+    )
     return TranscriptProfile(marker_capable=marker_capable, classic_capable=classic_capable, reason=reason)
 
 
@@ -41,6 +45,8 @@ def route_mode(requested_mode: str, profile: TranscriptProfile) -> str:
             raise ValueError("marker_mode_unavailable_for_transcript")
         return "marker"
     if requested_mode == "classic":
+        if not profile.classic_capable:
+            raise ValueError("classic_mode_unavailable_for_transcript")
         return "classic"
     # hitl super-mode
     if profile.marker_capable:

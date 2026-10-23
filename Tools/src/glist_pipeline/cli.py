@@ -207,7 +207,29 @@ def _split_mode_for_blocks_mode(mode: str) -> str:
     return "classic" if mode in {"classic", "semantic"} else "marker"
 
 def _ensure_repo_audio(source: Path) -> Path:
-    target = REPO_ROOT / "Audios" / source.name
+    target_dir = REPO_ROOT / "Audios"
+    target = target_dir / source.name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source.suffix.lower() == ".mp3":
+        if source.resolve() != target.resolve():
+            shutil.copyfile(source, target)
+        return target
+
+    target = target_dir / f"{source.stem}.mp3"
+    merge_audio_lib.run_ffmpeg([
+        "-y",
+        "-i",
+        str(source),
+        "-vn",
+        "-codec:a",
+        "libmp3lame",
+        str(target),
+    ])
+    return target
+
+
+def _ensure_repo_transcript(source: Path) -> Path:
+    target = REPO_ROOT / "Transcripts" / source.name
     target.parent.mkdir(parents=True, exist_ok=True)
     if source.resolve() != target.resolve():
         shutil.copyfile(source, target)
@@ -315,10 +337,16 @@ def _run_action_create_blocks(transcript_path: Path, audio_path: Path, mode: Mod
     print(f"Transcript file: {transcript_path}")
     print(f"Audio file: {audio_path}")
 
+    repo_transcript = _ensure_repo_transcript(transcript_path)
+    if repo_transcript != transcript_path:
+        print(f"Cached transcript for generation: {repo_transcript}")
+
     repo_audio = _ensure_repo_audio(audio_path)
     if repo_audio != audio_path:
         print(f"Cached audio for later splitting: {repo_audio}")
 
+    transcript_path = repo_transcript
+    audio_path = repo_audio
     _set_latest(transcript_path)
     _set_latest(repo_audio)
 
@@ -625,7 +653,11 @@ def run_menu_action_1() -> int:
     if mode == "hitl":
         print("Guided review chooses best available generator, then asks you to review result.")
         print("Block count is generator-based, not LLM-decided in this mode.")
-    return _run_action_create_blocks(transcript, audio, mode)
+    try:
+        return _run_action_create_blocks(transcript, audio, mode)
+    except Exception as exc:
+        print(f"Action failed: {exc}")
+        return 1
 
 
 def run_menu_action_2() -> int:

@@ -92,13 +92,13 @@ $env:PYTHONPATH="$PWD\Tools\src"
 
 ```powershell
 $env:PYTHONPATH="$PWD\Tools\src"
-.\.venv\Scripts\pyinstaller.exe --clean .\GermanListeningCLI.spec
+.\.venv\Scripts\pyinstaller.exe --clean --noconfirm .\GermanListeningCLI.spec
 ```
 
-Built app:
+Built app (onedir bundle):
 
 ```text
-dist/GermanListeningCLI.exe
+dist/GermanListeningCLI/GermanListeningCLI.exe
 ```
 
 ## Example Menu

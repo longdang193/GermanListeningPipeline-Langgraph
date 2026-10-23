@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -35,7 +36,9 @@ def _load_legacy_entrypoint(script_name: str):
 def _run_legacy_in_process(script_name: str, argv: list[str]) -> int:
     module = _load_legacy_entrypoint(script_name)
     old_argv = sys.argv[:]
+    old_cwd = Path.cwd()
     try:
+        os.chdir(REPO_ROOT)
         sys.argv = [script_name, *argv]
         module.main()
         return 0
@@ -46,6 +49,7 @@ def _run_legacy_in_process(script_name: str, argv: list[str]) -> int:
         return 1 if code else 0
     finally:
         sys.argv = old_argv
+        os.chdir(old_cwd)
 
 
 def run_legacy(script_name: str, argv: list[str] | None = None) -> int:

@@ -37,5 +37,5 @@ def test_detect_blocks_mode_returns_classic_for_telc_blocks(tmp_path: Path) -> N
     assert _detect_blocks_mode(md) == "classic"
 
 
-def test_split_mode_for_semantic_blocks_uses_marker_splitter() -> None:
-    assert _split_mode_for_blocks_mode("semantic") == "marker"
+def test_split_mode_for_semantic_blocks_uses_classic_splitter() -> None:
+    assert _split_mode_for_blocks_mode("semantic") == "classic"
